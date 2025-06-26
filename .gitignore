@@ -1,0 +1,131 @@
+# PowerShell 7 Development .gitignore
+
+# CSV files
+*.csv
+
+# PowerShell specific
+*.ps1xml
+*.psd1.bak
+*.psm1.bak
+*.ps1.bak
+
+# PowerShell execution policy bypass files
+*.ps1.lnk
+
+# PowerShell ISE files
+*.psise
+
+# PowerShell profile files (optional - uncomment if you want to ignore)
+# Microsoft.PowerShell_profile.ps1
+# Microsoft.VSCode_profile.ps1
+
+# PowerShell transcripts
+PowerShell_transcript*.txt
+Transcript*.txt
+
+# PowerShell module cache
+PSGetModuleInfo.xml
+
+# PowerShell Gallery API key
+.apikey
+
+# Credentials and secrets
+*.credential
+*.cred
+credentials.xml
+secrets.xml
+*.secret
+
+# Configuration files with sensitive data
+config.json
+appsettings.json
+settings.json
+
+# Logs
+*.log
+logs/
+Logs/
+
+# Test results
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+
+# Pester test results
+TestResults.xml
+coverage.xml
+
+# Build artifacts
+bin/
+obj/
+out/
+publish/
+release/
+dist/
+
+# Package files
+*.nupkg
+*.snupkg
+packages/
+
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.sln.docstates
+
+# JetBrains IDEs
+.idea/
+*.iml
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux
+*~
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# Node.js (if using any Node-based tools)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment variables
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Azure specific
+.azure/
+azuredeploy.parameters.local.json
+
+# PowerShell Empire/Metasploit
+*.empire
+*.msf
+
+# Backup files
+*.bak
+*.backup
+*~
