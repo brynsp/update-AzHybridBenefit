@@ -29,7 +29,10 @@
 param(
     [Parameter(Mandatory = $false, HelpMessage = 'Array of subscription IDs to process')]
     [ValidatePattern('^[0-9a-fA-F\-]{36}$')]
-    [string[]]$SubscriptionIds
+    [string[]]$SubscriptionIds,
+    [Parameter(Mandatory = $false, HelpMessage = 'Parallel throttle limit for VM operations')]
+    [ValidateRange(1, 50)]
+    [int]$ThrottleLimit = 10
 )
 
 #region Constants
@@ -80,9 +83,10 @@ function Get-TargetSubscriptions {
 function Get-WindowsVMInventory {
     param(
         [Parameter(Mandatory)]
-        [object[]]$Subscriptions
+        [object[]]$Subscriptions,
+        [Parameter(Mandatory = $false)]
+        [int]$ThrottleLimit = 10
     )
-
     $syncedResults = [System.Collections.Concurrent.ConcurrentBag[object]]::new()
     $Subscriptions | ForEach-Object -Parallel {
         Import-Module Az.Accounts, Az.Compute -Force
@@ -106,7 +110,7 @@ function Get-WindowsVMInventory {
             }
             $results.Add($errorObj)
         }
-    } -ThrottleLimit 10
+    } -ThrottleLimit $ThrottleLimit
     return $syncedResults
 }
 
@@ -210,7 +214,9 @@ function Invoke-AzHybridBenefitUpdate {
     [CmdletBinding(SupportsShouldProcess)]
     param(
         [Parameter(Mandatory = $false)]
-        [string[]]$SubscriptionIds
+        [string[]]$SubscriptionIds,
+        [Parameter(Mandatory = $false)]
+        [int]$ThrottleLimit = 10
     )
 
     $logPath = Join-Path -Path $PSScriptRoot -ChildPath "AzHybridBenefit_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
@@ -230,7 +236,7 @@ function Invoke-AzHybridBenefitUpdate {
 
     Write-Host '`nDiscovering Windows VMs across all subscriptions… ' -ForegroundColor Yellow
     
-    $allVMs = Get-WindowsVMInventory -Subscriptions $subscriptions
+    $allVMs = Get-WindowsVMInventory -Subscriptions $subscriptions -ThrottleLimit $ThrottleLimit
     $vmErrors = $allVMs | Where-Object { $_.Error }
     foreach ($err in $vmErrors) {
         Write-Host "  ERROR in subscription $($err.SubscriptionName): $($err.Message)" -ForegroundColor Red
@@ -242,7 +248,7 @@ function Invoke-AzHybridBenefitUpdate {
     
     $results = $targetVMs | ForEach-Object -Parallel {
         Set-HybridBenefitOnVM -VM $_
-    } -ThrottleLimit 10
+    } -ThrottleLimit $ThrottleLimit
 
     $processedCount = 0
     foreach ($result in $results) {
@@ -294,5 +300,5 @@ function Invoke-AzHybridBenefitUpdate {
 
 # Entry point - only execute if script is run directly, not dot sourced
 if ($MyInvocation.InvocationName -ne '.') {
-    Invoke-AzHybridBenefitUpdate -SubscriptionIds $SubscriptionIds
+    Invoke-AzHybridBenefitUpdate -SubscriptionIds $SubscriptionIds -ThrottleLimit $ThrottleLimit
 }
