@@ -3,23 +3,48 @@
     Applies Azure Hybrid Use Benefit (AHUB) to Windows and SQL Server VMs across subscriptions.
 
 .DESCRIPTION
-    This script applies Azure Hybrid Use Benefit licensing to Windows OS and SQL Server VMs across one or more Azure subscriptions. It processes VMs in parallel for efficiency and logs all operations to a CSV file.
+    This script applies Azure Hybrid Use Benefit licensing to Windows OS and SQL Server VMs across one or more Azure subscriptions. 
+    It processes VMs in parallel for efficiency and logs all operations to a CSV file. The script can update OS licenses, 
+    SQL Server licenses, or both based on the Mode parameter.
 
 .PARAMETER SubscriptionIds
     Array of subscription IDs to process. If not specified, processes all enabled subscriptions.
 
+.PARAMETER ThrottleLimit
+    Maximum number of parallel operations for VM processing. Valid range: 1-50. Default: 10.
+
+.PARAMETER Mode
+    Specifies which licenses to update. Valid values: 'OS', 'SQL', or 'Both'. Default: 'Both'.
+    - OS: Updates only Windows Server OS licenses
+    - SQL: Updates only SQL Server licenses
+    - Both: Updates both OS and SQL Server licenses
+
 .EXAMPLE
     .\Update-AzHybridBenefit.ps1
-    Processes all Windows VMs in all enabled subscriptions.
+    Processes all Windows VMs in all enabled subscriptions, updating both OS and SQL licenses.
 
 .EXAMPLE
     .\Update-AzHybridBenefit.ps1 -SubscriptionIds "00000000-0000-0000-0000-000000000000","11111111-1111-1111-1111-111111111111"
-    Processes Windows VMs only in the specified subscriptions.
+    Processes Windows VMs only in the specified subscriptions, updating both OS and SQL licenses.
+
+.EXAMPLE
+    .\Update-AzHybridBenefit.ps1 -Mode OS -ThrottleLimit 20
+    Updates only OS licenses for all Windows VMs with increased parallelism.
+
+.EXAMPLE
+    .\Update-AzHybridBenefit.ps1 -Mode SQL
+    Updates only SQL Server licenses for VMs with SQL Server installed.
 
 .NOTES
-    Author: YourName
+    Author: bryn.spears@microsoft.com
     Last Updated: June 27, 2025
-    Requires PowerShell 7+ and Az PowerShell modules (Az.Accounts, Az.Compute, Az.SqlVirtualMachine)
+    Requires PowerShell 7.5+ and Az PowerShell modules (Az.Accounts, Az.Compute, Az.SqlVirtualMachine)
+    
+    The script will skip:
+    - Non-Windows VMs
+    - Disabled subscriptions
+    - SQL Server VMs already configured for DR licensing
+    - VMs that already have the correct license configuration
 #>
 
 #requires -Modules Az.Accounts, Az.Compute, Az.SqlVirtualMachine
