@@ -240,7 +240,11 @@ $results = foreach ($job in $jobs) {
 # Export log to CSV
 Write-Host "`nExporting results to CSV..." -ForegroundColor Yellow
 try {
-    $logEntries | Sort-Object Timestamp, VMName | Export-Csv -Path $logPath -NoTypeInformation
+    # Select only the expected columns to ensure no extra data is included
+    $logEntries | 
+    Sort-Object Timestamp, VMName | 
+    Select-Object Timestamp, VMName, ResourceGroup, Subscription, SubscriptionId, Applied, Status, Message | 
+    Export-Csv -Path $logPath -NoTypeInformation
     Write-Host "Log file created: $logPath" -ForegroundColor Green
     
     # Summary statistics
