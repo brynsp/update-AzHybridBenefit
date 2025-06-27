@@ -14,7 +14,7 @@
 
 .EXAMPLE
     .\Update-AzHybridBenefit.ps1 -SubscriptionIds "00000000-0000-0000-0000-000000000000","11111111-1111-1111-1111-111111111111"
-    Processes only Windows VMs in the specified subscriptions.
+    Processes Windows VMs only in the specified subscriptions.
 
 .NOTES
     Author: YourName
