@@ -32,7 +32,10 @@ param(
     [string[]]$SubscriptionIds,
     [Parameter(Mandatory = $false, HelpMessage = 'Parallel throttle limit for VM operations')]
     [ValidateRange(1, 50)]
-    [int]$ThrottleLimit = 10
+    [int]$ThrottleLimit = 10,
+    [Parameter(Mandatory = $false, HelpMessage = 'Which license(s) to update: OS, SQL, or Both')]
+    [ValidateSet('OS', 'SQL', 'Both')]
+    [string]$Mode = 'Both'
 )
 
 #region Constants
@@ -117,74 +120,70 @@ function Get-WindowsVMInventory {
 function Set-HybridBenefitOnVM {
     param(
         [Parameter(Mandatory)]
-        [object]$VM
+        [object]$VM,
+        [Parameter(Mandatory = $false)]
+        [ValidateSet('OS', 'SQL', 'Both')]
+        [string]$Mode = 'Both'
     )
     Import-Module Az.Accounts, Az.Compute, Az.SqlVirtualMachine -Force
-
     $subscriptionId = $VM.SubscriptionId
     $subscriptionName = $VM.SubscriptionName
     $appliedChanges = [System.Collections.Generic.List[string]]::new()
     $statusMessages = [System.Collections.Generic.List[string]]::new()
     $overallStatus = 'Success'
-    
     try {
         $null = Set-AzContext -SubscriptionId $subscriptionId
-    
         # OS License
-        $licenseType = $VM.LicenseType
-        if ($licenseType -ne $WINDOWS_LICENSE_TYPE) {
-            try {
-                $fullVm = Get-AzVM -ResourceGroupName $VM.ResourceGroupName -Name $VM.Name
-                $fullVm.LicenseType = $WINDOWS_LICENSE_TYPE
-                $null = Update-AzVM -ResourceGroupName $VM.ResourceGroupName -VM $fullVm
-
-                $appliedChanges.Add('OS')
-                $statusMessages.Add("OS license updated from '$licenseType' to '$WINDOWS_LICENSE_TYPE'")
-            }
-            catch {
-                $overallStatus = 'Partial Error'
-                $statusMessages.Add("Failed to update OS license: $($PSItem.Exception.Message)")
-            }
-        }
-        else {
-            $statusMessages.Add("OS license already set to '$WINDOWS_LICENSE_TYPE'")
-        }
-
-        # SQL License
-        try {
-            $sqlVm = Get-AzSqlVM -ResourceGroupName $VM.ResourceGroupName -Name $VM.Name -ErrorAction Stop
-
-            $sqlLicense = $sqlVm.SqlServerLicenseType
-            
-            if ($sqlLicense -ne $DR_LICENSE_TYPE -and $sqlLicense -ne $SQL_LICENSE_TYPE) {
+        if ($Mode -eq 'OS' -or $Mode -eq 'Both') {
+            $licenseType = $VM.LicenseType
+            if ($licenseType -ne $WINDOWS_LICENSE_TYPE) {
                 try {
-                    $sqlVm.SqlServerLicenseType = $SQL_LICENSE_TYPE
-                    
-                    $updateAzSqlVMParams = @{
-                        ResourceGroupName = $VM.ResourceGroupName
-                        Name              = $VM.Name
-                        LicenseType       = $SQL_LICENSE_TYPE
-                    }
-                    $null = Update-AzSqlVM @updateAzSqlVMParams
-
-                    $appliedChanges.Add('SQL')
-                    $statusMessages.Add("SQL license updated from '$sqlLicense' to '$SQL_LICENSE_TYPE'")
+                    $fullVm = Get-AzVM -ResourceGroupName $VM.ResourceGroupName -Name $VM.Name
+                    $fullVm.LicenseType = $WINDOWS_LICENSE_TYPE
+                    $null = Update-AzVM -ResourceGroupName $VM.ResourceGroupName -VM $fullVm
+                    $appliedChanges.Add('OS')
+                    $statusMessages.Add("OS license updated from '$licenseType' to '$WINDOWS_LICENSE_TYPE'")
                 }
                 catch {
                     $overallStatus = 'Partial Error'
-                    $statusMessages.Add("Failed to update SQL license: $($PSItem.Exception.Message)")
+                    $statusMessages.Add("Failed to update OS license: $($PSItem.Exception.Message)")
                 }
             }
             else {
-                $statusMessages.Add("SQL license already set to '$sqlLicense'")
+                $statusMessages.Add("OS license already set to '$WINDOWS_LICENSE_TYPE'")
             }
         }
-        catch {
-            $statusMessages.Add('No SQL Server VM extension found')
+        # SQL License
+        if ($Mode -eq 'SQL' -or $Mode -eq 'Both') {
+            try {
+                $sqlVm = Get-AzSqlVM -ResourceGroupName $VM.ResourceGroupName -Name $VM.Name -ErrorAction Stop
+                $sqlLicense = $sqlVm.SqlServerLicenseType
+                if ($sqlLicense -ne $DR_LICENSE_TYPE -and $sqlLicense -ne $SQL_LICENSE_TYPE) {
+                    try {
+                        $sqlVm.SqlServerLicenseType = $SQL_LICENSE_TYPE
+                        $updateAzSqlVMParams = @{
+                            ResourceGroupName = $VM.ResourceGroupName
+                            Name              = $VM.Name
+                            LicenseType       = $SQL_LICENSE_TYPE
+                        }
+                        $null = Update-AzSqlVM @updateAzSqlVMParams
+                        $appliedChanges.Add('SQL')
+                        $statusMessages.Add("SQL license updated from '$sqlLicense' to '$SQL_LICENSE_TYPE'")
+                    }
+                    catch {
+                        $overallStatus = 'Partial Error'
+                        $statusMessages.Add("Failed to update SQL license: $($PSItem.Exception.Message)")
+                    }
+                }
+                else {
+                    $statusMessages.Add("SQL license already set to '$sqlLicense'")
+                }
+            }
+            catch {
+                $statusMessages.Add('No SQL Server VM extension found')
+            }
         }
-
         $applied = if ($appliedChanges.Count -eq 0) { 'None' } else { $appliedChanges -join "+" }
-        
         return [PSCustomObject]@{
             Timestamp      = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
             VMName         = $VM.Name
@@ -216,7 +215,10 @@ function Invoke-AzHybridBenefitUpdate {
         [Parameter(Mandatory = $false)]
         [string[]]$SubscriptionIds,
         [Parameter(Mandatory = $false)]
-        [int]$ThrottleLimit = 10
+        [int]$ThrottleLimit = 10,
+        [Parameter(Mandatory = $false)]
+        [ValidateSet('OS', 'SQL', 'Both')]
+        [string]$Mode = 'Both'
     )
 
     $logPath = Join-Path -Path $PSScriptRoot -ChildPath "AzHybridBenefit_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
@@ -242,12 +244,10 @@ function Invoke-AzHybridBenefitUpdate {
         Write-Host "  ERROR in subscription $($err.SubscriptionName): $($err.Message)" -ForegroundColor Red
     }
     $targetVMs = $allVMs | Where-Object { -not $_.Error }
-
     Write-Host "`nTotal Windows VMs found: $($targetVMs.Count)" -ForegroundColor Cyan
     Write-Host '`nProcessing VMs for license updates… ' -ForegroundColor Yellow
-    
     $results = $targetVMs | ForEach-Object -Parallel {
-        Set-HybridBenefitOnVM -VM $_
+        Set-HybridBenefitOnVM -VM $_ -Mode $using:Mode
     } -ThrottleLimit $ThrottleLimit
 
     $processedCount = 0
@@ -300,5 +300,5 @@ function Invoke-AzHybridBenefitUpdate {
 
 # Entry point - only execute if script is run directly, not dot sourced
 if ($MyInvocation.InvocationName -ne '.') {
-    Invoke-AzHybridBenefitUpdate -SubscriptionIds $SubscriptionIds -ThrottleLimit $ThrottleLimit
+    Invoke-AzHybridBenefitUpdate -SubscriptionIds $SubscriptionIds -ThrottleLimit $ThrottleLimit -Mode $Mode
 }
