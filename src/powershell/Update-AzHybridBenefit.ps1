@@ -28,18 +28,23 @@
 [CmdletBinding(SupportsShouldProcess)]
 param(
     [Parameter(Mandatory = $false, HelpMessage = 'Array of subscription IDs to process')]
-    [ValidatePattern('^[0-9a-fA-F\-]{36}$')]
-    [string[]]$SubscriptionIds,
+    [ValidatePattern('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')]
+    [string[]]
+    $SubscriptionIds,
+
     [Parameter(Mandatory = $false, HelpMessage = 'Parallel throttle limit for VM operations')]
     [ValidateRange(1, 50)]
-    [int]$ThrottleLimit = 10,
+    [int]
+    $ThrottleLimit = 10,
+
     [Parameter(Mandatory = $false, HelpMessage = 'Which license(s) to update: OS, SQL, or Both')]
     [ValidateSet('OS', 'SQL', 'Both')]
-    [string]$Mode = 'Both'
+    [string]
+    $Mode = 'Both'
 )
 
 #region Constants
-Set-StrictMode -Version Latest
+Set-StrictMode -Version 3.0
 $WINDOWS_LICENSE_TYPE = 'Windows_Server'
 $SQL_LICENSE_TYPE = 'AHUB'
 $DR_LICENSE_TYPE = 'DR'
