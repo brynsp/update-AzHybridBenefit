@@ -68,6 +68,8 @@ param(
     $Mode = 'Both'
 )
 
+Add-Content -Path "$PSScriptRoot\debug.txt" -Value "ScriptName: $($MyInvocation.ScriptName), PSCommandPath: $PSCommandPath, PESTER_TEST_RUN: $env:PESTER_TEST_RUN"
+
 #region Constants
 Set-StrictMode -Version 3.0
 $WINDOWS_LICENSE_TYPE = 'Windows_Server'
@@ -266,13 +268,20 @@ function Set-HybridBenefitOnVMs {
 function Invoke-AzHybridBenefitUpdate {
     [CmdletBinding(SupportsShouldProcess)]
     param(
-        [Parameter(Mandatory = $false)]
-        [string[]]$SubscriptionIds,
-        [Parameter(Mandatory = $false)]
-        [int]$ThrottleLimit = 10,
-        [Parameter(Mandatory = $false)]
+        [Parameter(Mandatory = $false, HelpMessage = 'Array of subscription IDs to process')]
+        [ValidatePattern('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')]
+        [string[]]
+        $SubscriptionIds,
+
+        [Parameter(Mandatory = $false, HelpMessage = 'Parallel throttle limit for VM operations')]
+        [ValidateRange(1, 50)]
+        [int]
+        $ThrottleLimit = 10,
+
+        [Parameter(Mandatory = $false, HelpMessage = 'Which license(s) to update: OS, SQL, or Both')]
         [ValidateSet('OS', 'SQL', 'Both')]
-        [string]$Mode = 'Both'
+        [string]
+        $Mode = 'Both'
     )
 
     $logPath = Join-Path -Path $PSScriptRoot -ChildPath "AzHybridBenefit_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
@@ -354,12 +363,7 @@ function Invoke-AzHybridBenefitUpdate {
     Write-Host "`n=== Process Complete ===" -ForegroundColor Cyan
 }
 
-# Skip execution if running in Pester context
-$isPester = $null -ne $PSVersionTable.PSVersion -and 
-            ($null -ne (Get-Variable -Name 'InPesterTest' -ErrorAction SilentlyContinue) -or
-            ($null -ne $ExecutionContext.SessionState.Module -and $ExecutionContext.SessionState.Module.Name -eq 'Pester') -or
-            (Get-PSCallStack).Command -contains 'Invoke-Pester')
-
-if (-not $isPester) {
+# Only execute if the script is run directly (not dot-sourced or imported)
+if ($MyInvocation.ScriptName -eq $PSCommandPath) {
     Invoke-AzHybridBenefitUpdate -SubscriptionIds $SubscriptionIds -ThrottleLimit $ThrottleLimit -Mode $Mode
 }
