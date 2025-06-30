@@ -47,6 +47,7 @@ logs/
 Logs/
 
 # Test results
+debug.txt
 TestResults/
 *.trx
 *.coverage
