@@ -71,12 +71,15 @@ param(
 Add-Content -Path "$PSScriptRoot\debug.txt" -Value "ScriptName: $($MyInvocation.ScriptName), PSCommandPath: $PSCommandPath, PESTER_TEST_RUN: $env:PESTER_TEST_RUN"
 
 #region Constants
+
 Set-StrictMode -Version 3.0
 $WINDOWS_LICENSE_TYPE = 'Windows_Server'
 $SQL_LICENSE_TYPE = 'AHUB'
 $DR_LICENSE_TYPE = 'DR'
+
 #endregion
 
+#region Functions
 function Get-TargetSubscriptions {
     param([string[]]$SubscriptionIds)
 
@@ -265,6 +268,10 @@ function Set-HybridBenefitOnVMs {
     return $syncedResults
 }
 
+#endregion
+
+#region Main Script Execution
+
 function Invoke-AzHybridBenefitUpdate {
     [CmdletBinding(SupportsShouldProcess)]
     param(
@@ -367,3 +374,5 @@ function Invoke-AzHybridBenefitUpdate {
 if ($MyInvocation.ScriptName -eq $PSCommandPath) {
     Invoke-AzHybridBenefitUpdate -SubscriptionIds $SubscriptionIds -ThrottleLimit $ThrottleLimit -Mode $Mode
 }
+
+#endregion
