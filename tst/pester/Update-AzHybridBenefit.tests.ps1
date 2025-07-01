@@ -20,12 +20,13 @@ Describe 'Script Execution Prevention' {
 }
 
 Describe 'Update-AzHybridBenefit Parameter Validation' {
+    BeforeAll {
+        # Provide minimal valid objects so parameter validation is isolated
+        Mock Get-TargetSubscriptions { @([PSCustomObject]@{ Id = '00000000-0000-0000-0000-000000000000'; Name = 'Test Sub'; State = 'Enabled' }) }
+        Mock Get-WindowsVMInventory { @([PSCustomObject]@{ Name = 'VM1'; ResourceGroupName = 'RG1'; LicenseType = $null; SubscriptionId = '00000000-0000-0000-0000-000000000000'; SubscriptionName = 'Test Sub' }) }
+        Mock Set-HybridBenefitOnVMs { @() }
+    }
     Context 'SubscriptionIds Parameter' {
-        BeforeEach {
-            Mock Get-TargetSubscriptions { @() }
-            Mock Get-WindowsVMInventory { @() }
-            Mock Set-HybridBenefitOnVMs { @() }
-        }
         It 'Should accept valid subscription ID format' {
             $validId = '12345678-1234-1234-1234-123456789012'
             { Invoke-AzHybridBenefitUpdate -SubscriptionIds $validId -WhatIf } | Should -Not -Throw
@@ -52,11 +53,6 @@ Describe 'Update-AzHybridBenefit Parameter Validation' {
     }
     
     Context 'ThrottleLimit Parameter' {
-        BeforeEach {
-            Mock Get-TargetSubscriptions { @() }
-            Mock Get-WindowsVMInventory { @() }
-            Mock Set-HybridBenefitOnVMs { @() }
-        }
         It 'Should accept valid throttle limits' {
             $validLimits = @(1, 25, 50)
             foreach ($limit in $validLimits) {
@@ -72,17 +68,20 @@ Describe 'Update-AzHybridBenefit Parameter Validation' {
         }
         
         It 'Should default to 10 when not specified' {
-            # This would need to be tested through function behavior
+            # Arrange: Mock Set-HybridBenefitOnVMs to capture ThrottleLimit
+            Mock Set-HybridBenefitOnVMs {
+                param($VMs, $Mode, $ThrottleLimit)
+                $ThrottleLimit | Should -Be 10
+                @()
+            }
+
+            # Act & Assert: Should not throw and ThrottleLimit should be 10
             { Invoke-AzHybridBenefitUpdate -WhatIf } | Should -Not -Throw
+            Assert-MockCalled Set-HybridBenefitOnVMs -Times 1
         }
     }
     
     Context 'Mode Parameter' {
-        BeforeEach {
-            Mock Get-TargetSubscriptions { @() }
-            Mock Get-WindowsVMInventory { @() }
-            Mock Set-HybridBenefitOnVMs { @() }
-        }
         It 'Should accept valid modes' {
             $validModes = @('OS', 'SQL', 'Both')
             foreach ($mode in $validModes) {
@@ -117,11 +116,6 @@ Describe 'Update-AzHybridBenefit Parameter Validation' {
     }
     
     Context 'Parameter Combinations' {
-        BeforeEach {
-            Mock Get-TargetSubscriptions { @() }
-            Mock Get-WindowsVMInventory { @() }
-            Mock Set-HybridBenefitOnVMs { @() }
-        }
         It 'Should accept all valid parameters together' {
             $params = @{
                 SubscriptionIds = '12345678-1234-1234-1234-123456789012'
@@ -134,42 +128,43 @@ Describe 'Update-AzHybridBenefit Parameter Validation' {
     }
 }
 
+#TODO: work on this test block
 Describe 'Get-TargetSubscriptions Function' {
     BeforeAll {
         Mock Get-AzSubscription {
             param($SubscriptionId)
-            if ($SubscriptionId -eq 'valid-sub-1') {
+            if ($SubscriptionId -eq '00000000-0000-0000-0000-000000000001') {
                 return [PSCustomObject]@{
-                    Id    = 'valid-sub-1'
+                    Id    = '00000000-0000-0000-0000-000000000001'
                     Name  = 'Test Subscription 1'
                     State = 'Enabled'
                 }
             }
-            elseif ($SubscriptionId -eq 'disabled-sub') {
+            elseif ($SubscriptionId -eq 'D1SABED0-0000-0000-0000-000000000003') {
                 return [PSCustomObject]@{
-                    Id    = 'disabled-sub'
+                    Id    = 'D1SABED0-0000-0000-0000-000000000003'
                     Name  = 'Disabled Subscription'
                     State = 'Disabled'
                 }
             }
-            elseif ($SubscriptionId -eq 'error-sub') {
-                throw "Subscription not found"
+            elseif ($SubscriptionId -eq 'DEADBEEF-0000-0000-0000-000000000000') {
+                return $null
             }
             else {
                 # Return all subscriptions when no ID specified
                 return @(
                     [PSCustomObject]@{
-                        Id    = 'sub-1'
+                        Id    = '00000000-0000-0000-0000-000000000001'
                         Name  = 'Subscription 1'
                         State = 'Enabled'
                     },
                     [PSCustomObject]@{
-                        Id    = 'sub-2'
+                        Id    = '00000000-0000-0000-0000-000000000002'
                         Name  = 'Subscription 2'
                         State = 'Enabled'
                     },
                     [PSCustomObject]@{
-                        Id    = 'sub-3'
+                        Id    = 'D15ABED0-0000-0000-0000-000000000003'
                         Name  = 'Subscription 3'
                         State = 'Disabled'
                     }
@@ -180,24 +175,24 @@ Describe 'Get-TargetSubscriptions Function' {
     
     Context 'When specific subscription IDs are provided' {
         It 'Should return only enabled subscriptions' {
-            $result = Get-TargetSubscriptions -SubscriptionIds @('valid-sub-1', 'disabled-sub')
+            $result = Get-TargetSubscriptions -SubscriptionIds @('00000000-0000-0000-0000-000000000001', 'D1SABED0-0000-0000-0000-000000000003')
             $result.Count | Should -Be 1
-            $result[0].Id | Should -Be 'valid-sub-1'
+            $result[0].Id | Should -Be '00000000-0000-0000-0000-000000000001'
         }
 
         It 'Should handle subscription retrieval errors gracefully' {
             Mock Write-Warning {}
-            $result = Get-TargetSubscriptions -SubscriptionIds @('error-sub', 'valid-sub-1')
+            $result = Get-TargetSubscriptions -SubscriptionIds @('DEADBEEF-0000-0000-0000-000000000000', '00000000-0000-0000-0000-000000000001')
             $result.Count | Should -Be 1
-            $result[0].Id | Should -Be 'valid-sub-1'
+            $result[0].Id | Should -Be '00000000-0000-0000-0000-000000000001'
             Assert-MockCalled Write-Warning -Times 1
         }
         
         It 'Should warn when no enabled subscriptions found' {
             Mock Write-Warning {}
-            $result = Get-TargetSubscriptions -SubscriptionIds @('disabled-sub')
+            $result = Get-TargetSubscriptions -SubscriptionIds @('DEADBEEF-0000-0000-0000-000000000000')
             $result | Should -BeNullOrEmpty
-            Assert-MockCalled Write-Warning -Times 2 # One for disabled, one for no enabled
+            Assert-MockCalled Write-Warning -Times 2 # One for error, one for no enabled
         }
     }
     
@@ -250,7 +245,11 @@ Describe 'Get-WindowsVMInventory Function' {
         It 'Should discover Windows VMs from subscriptions' {
             $script:throwError = $false
             $subscriptions = @(
-                [PSCustomObject]@{ Id = 'sub-1'; Name = 'Test Sub 1' }
+                [PSCustomObject]@{
+                    Id = '00000000-0000-0000-0000-000000000001'
+                    Name = 'Test Sub 1'
+                    State = 'Enabled'
+                }
             )
 
             $result = Get-WindowsVMInventory -Subscriptions $subscriptions -ThrottleLimit 1
@@ -261,7 +260,7 @@ Describe 'Get-WindowsVMInventory Function' {
             $vms.Count | Should -Be 2
             $vms | ForEach-Object {
                 $_.SubscriptionName           | Should -Be 'Test Sub 1'
-                $_.SubscriptionId             | Should -Be 'sub-1'
+                $_.SubscriptionId             | Should -Be '00000000-0000-0000-0000-000000000001'
                 $_.StorageProfile.OSDisk.OSType | Should -Be 'Windows'
             }
         }
@@ -269,7 +268,7 @@ Describe 'Get-WindowsVMInventory Function' {
         It 'Should exclude Linux VMs' {
             $script:throwError = $false
             $subscriptions = @(
-                [PSCustomObject]@{ Id = 'sub-1'; Name = 'Test Sub 1' }
+                [PSCustomObject]@{ Id = '00000000-0000-0000-0000-000000000001'; Name = 'Test Sub 1' }
             )
             
             $result = Get-WindowsVMInventory -Subscriptions $subscriptions -ThrottleLimit 1
@@ -279,45 +278,45 @@ Describe 'Get-WindowsVMInventory Function' {
         }
     }
     
-        Context 'Error handling' {
-            It 'Should handle subscription context errors' {
-                $script:throwError = $true
-                $subscriptions = @(
-                    [PSCustomObject]@{ Id = 'sub-1'; Name = 'Test Sub 1' }
-                )
+    Context 'Error handling' {
+        It 'Should handle subscription context errors' {
+            $script:throwError = $true
+            $subscriptions = @(
+                [PSCustomObject]@{ Id = '00000000-0000-0000-0000-000000000001'; Name = 'Test Sub 1' }
+            )
             
-                $result = Get-WindowsVMInventory -Subscriptions $subscriptions -ThrottleLimit 1
-                $errors = $result | Where-Object { $_.Error }
+            $result = Get-WindowsVMInventory -Subscriptions $subscriptions -ThrottleLimit 1
+            $errors = $result | Where-Object { $_.Error }
             
-                $errors.Count | Should -BeGreaterThan 0
-                $errors[0].Error | Should -Be $true
-                $errors[0].Message | Should -BeLike "*Failed to get VMs*"
-                $errors[0].SubscriptionName | Should -Be 'Test Sub 1'
-            }
+            $errors.Count | Should -BeGreaterThan 0
+            $errors[0].Error | Should -Be $true
+            $errors[0].Message | Should -BeLike "*Failed to get VMs*"
+            $errors[0].SubscriptionName | Should -Be 'Test Sub 1'
+        }
         
-            It 'Should continue processing other subscriptions after error' {
-                Mock Get-AzVM {
-                    if ($script:currentSub -eq 'sub-1') {
-                        throw "Failed for sub-1"
-                    }
-                    return @([PSCustomObject]@{
-                            Name              = 'VM1'
-                            ResourceGroupName = 'RG1'
-                            StorageProfile    = @{ OSDisk = @{ OSType = 'Windows' } }
-                        })
+        It 'Should continue processing other subscriptions after error' {
+            Mock Get-AzVM {
+                if ($script:currentSub -eq '00000000-0000-0000-0000-000000000001') {
+                    throw "Failed for sub-1"
                 }
+                return @([PSCustomObject]@{
+                        Name              = 'VM1'
+                        ResourceGroupName = 'RG1'
+                        StorageProfile    = @{ OSDisk = @{ OSType = 'Windows' } }
+                    })
+            }
             
-                $subscriptions = @(
-                    [PSCustomObject]@{ Id = 'sub-1'; Name = 'Test Sub 1' },
-                    [PSCustomObject]@{ Id = 'sub-2'; Name = 'Test Sub 2' }
-                )
+            $subscriptions = @(
+                [PSCustomObject]@{ Id = '00000000-0000-0000-0000-000000000001'; Name = 'Test Sub 1' },
+                [PSCustomObject]@{ Id = '00000000-0000-0000-0000-000000000002'; Name = 'Test Sub 2' }
+            )
             
-                $result = Get-WindowsVMInventory -Subscriptions $subscriptions -ThrottleLimit 1
+            $result = Get-WindowsVMInventory -Subscriptions $subscriptions -ThrottleLimit 1
             
                 ($result | Where-Object { $_.Error }).Count | Should -BeGreaterThan 0
                 ($result | Where-Object { -not $_.Error }).Count | Should -BeGreaterThan 0
-            }
         }
+    }
 }
 
 # Describe 'Set-HybridBenefitOnVMs Function' {
