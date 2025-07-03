@@ -15,7 +15,7 @@ Azure Hybrid Use Benefit allows customers with Software Assurance or qualifying 
 - **Bulk Processing**: Automatically processes multiple VMs across multiple subscriptions
 - **Parallel Execution**: Uses PowerShell parallel processing for efficient handling of large environments
 - **Selective Updates**: Can update OS licenses, SQL licenses, or both
-- **Safe Operation**: 
+- **Safe Operation**:
   - Skips VMs already configured with AHUB
   - Preserves SQL Server DR (Disaster Recovery) licensing
   - Only affects Windows VMs
@@ -35,16 +35,19 @@ Azure Hybrid Use Benefit allows customers with Software Assurance or qualifying 
 ## Installation
 
 1. Clone or download this repository:
+
 ```powershell
 git clone https://github.com/yourusername/update-AzHybridBenefit.git
 ```
 
 2. Ensure you have the required PowerShell modules installed:
+
 ```powershell
 Install-Module -Name Az.Accounts, Az.Compute, Az.SqlVirtualMachine -Scope CurrentUser
 ```
 
 3. Connect to Azure:
+
 ```powershell
 Connect-AzAccount
 ```
@@ -54,6 +57,7 @@ Connect-AzAccount
 ### Basic Usage
 
 Process all Windows VMs in all accessible subscriptions:
+
 ```powershell
 .\src\powershell\Update-AzHybridBenefit.ps1
 ```
@@ -109,12 +113,15 @@ Process all Windows VMs in all accessible subscriptions:
 ## Important Notes
 
 ### License Compliance
+
 ⚠️ **WARNING**: Before running this script, ensure you have:
+
 - Valid Windows Server licenses with Software Assurance for the number of cores you're licensing
 - Valid SQL Server licenses with Software Assurance for SQL VMs
 - Reviewed and understand Microsoft's licensing terms for Azure Hybrid Use Benefit
 
 ### What Gets Skipped
+
 - Non-Windows VMs (Linux VMs are not affected)
 - Disabled subscriptions
 - VMs already configured with AHUB
@@ -122,13 +129,16 @@ Process all Windows VMs in all accessible subscriptions:
 - VMs without SQL Server when running in SQL-only mode
 
 ### Cost Savings
+
 Applying Azure Hybrid Use Benefit can save:
+
 - Up to 40% on Windows Server VMs
 - Up to 55% on SQL Server VMs
 
 ## Output
 
 The script creates a CSV log file with the following information:
+
 - **Timestamp**: When the VM was processed
 - **VMName**: Name of the virtual machine
 - **ResourceGroup**: Resource group containing the VM
@@ -139,7 +149,8 @@ The script creates a CSV log file with the following information:
 - **Message**: Detailed status messages
 
 Example output:
-```
+
+```text
 === Starting Azure Hybrid Benefit Update Process ===
 Log file: C:\Scripts\AzHybridBenefit_20240115_143022.csv
 
@@ -204,6 +215,6 @@ This script is provided as-is. Always test in a non-production environment first
 ## Author
 
 **Bryn Spears**  
-bryn.spears@hotmail.com
+<bryn.spears@hotmail.com>
 
 Last Updated: July 2025
