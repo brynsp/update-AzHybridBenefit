@@ -331,8 +331,8 @@ function Get-WindowsVMInventory {
     
     # Add any persistent errors
     $finalErrors = @($allResults | Where-Object { $_.PSObject.Properties['Error'] -and $_.Error })
-    foreach ($error in $finalErrors) {
-        $null = $finalResults.Add($error)
+    foreach ($err in $finalErrors) {
+        $null = $finalResults.Add($err)
     }
     
     # Add unique VMs (exclude diagnostic objects)
