@@ -213,9 +213,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 This script is provided as-is. Always test in a non-production environment first. Ensure you comply with Microsoft licensing terms and have valid licenses before applying Azure Hybrid Use Benefit.
 
-## Author
-
-**Bryn Spears**  
-<bryn.spears@hotmail.com>
-
 Last Updated: July 2025
