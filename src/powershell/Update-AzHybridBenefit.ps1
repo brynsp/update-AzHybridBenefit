@@ -68,8 +68,6 @@ param(
     $Mode = 'Both'
 )
 
-Add-Content -Path "$PSScriptRoot\debug.txt" -Value "ScriptName: $($MyInvocation.ScriptName), PSCommandPath: $PSCommandPath, PESTER_TEST_RUN: $env:PESTER_TEST_RUN"
-
 #region Constants
 
 Set-StrictMode -Version 3.0
@@ -127,7 +125,6 @@ function Get-WindowsVMInventory {
     )
     $syncedResults = [System.Collections.Concurrent.ConcurrentBag[object]]::new()
     $Subscriptions | ForEach-Object -Parallel {
-        #param($subscription)
         
         $results = $using:syncedResults
 
