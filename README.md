@@ -36,8 +36,8 @@ Azure Hybrid Use Benefit allows customers with Software Assurance or qualifying 
 
 1. Clone or download this repository:
 
-```powershell
-git clone https://github.com/yourusername/update-AzHybridBenefit.git
+```bash
+git clone https://github.com/brynsp/update-AzHybridBenefit.git
 ```
 
 2. Ensure you have the required PowerShell modules installed:
