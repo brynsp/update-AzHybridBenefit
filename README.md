@@ -59,31 +59,31 @@ Connect-AzAccount
 Process all Windows VMs in all accessible subscriptions:
 
 ```powershell
-.\src\powershell\Update-AzHybridBenefit.ps1
+Update-AzHybridBenefit.ps1
 ```
 
 ### Process Specific Subscriptions
 
 ```powershell
-.\src\powershell\Update-AzHybridBenefit.ps1 -SubscriptionIds @("00000000-0000-0000-0000-000000000000", "11111111-1111-1111-1111-111111111111")
+Update-AzHybridBenefit.ps1 -SubscriptionIds @("00000000-0000-0000-0000-000000000000", "11111111-1111-1111-1111-111111111111")
 ```
 
 ### Update Only OS Licenses
 
 ```powershell
-.\src\powershell\Update-AzHybridBenefit.ps1 -Mode OS
+Update-AzHybridBenefit.ps1 -Mode OS
 ```
 
 ### Update Only SQL Server Licenses
 
 ```powershell
-.\src\powershell\Update-AzHybridBenefit.ps1 -Mode SQL
+Update-AzHybridBenefit.ps1 -Mode SQL
 ```
 
 ### Increase Parallel Processing
 
 ```powershell
-.\src\powershell\Update-AzHybridBenefit.ps1 -ThrottleLimit 20
+Update-AzHybridBenefit.ps1 -ThrottleLimit 20
 ```
 
 ## Parameters
@@ -126,6 +126,7 @@ Process all Windows VMs in all accessible subscriptions:
 - Disabled subscriptions
 - VMs already configured with AHUB
 - SQL Server VMs configured with DR (Disaster Recovery) licensing
+- SQL Server licensing on powered off machines. (Windows OS license doesn't require a running VM though.)
 - VMs without SQL Server when running in SQL-only mode
 
 ### Cost Savings
