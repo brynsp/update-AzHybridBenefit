@@ -1,5 +1,8 @@
 # PowerShell 7 Development .gitignore
 
+# Debug wrapper script
+debugwrapper.ps1
+
 # CSV files
 *.csv
 
