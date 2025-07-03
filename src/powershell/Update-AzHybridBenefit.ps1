@@ -128,33 +128,224 @@ function Get-WindowsVMInventory {
         [int]$ThrottleLimit = 10
     )
     
-    $syncedResults = [System.Collections.Concurrent.ConcurrentBag[object]]::new()
-    $Subscriptions | ForEach-Object -Parallel {
-        
-        $results = $using:syncedResults
-
-        Import-Module Az.Accounts, Az.Compute -Force
-        try {
-            $null = Set-AzContext -SubscriptionObject $_ -ErrorAction Stop
-            $vms = Get-AzVM -Status | Where-Object { $_.StorageProfile.OSDisk.OSType -eq 'Windows' }
-            foreach ($vm in $vms) {
-                $null = $vm | Add-Member -NotePropertyName 'SubscriptionName' -NotePropertyValue $_.Name -Force
-                $null = $vm | Add-Member -NotePropertyName 'SubscriptionId' -NotePropertyValue $_.Id -Force
-                $results.Add($vm)
-            }
-        }
-        catch {
-            $errorObj = [PSCustomObject]@{
-                Error            = $true
-                Message          = $_.Exception.Message
-                SubscriptionName = $_.Name
-                SubscriptionId   = $_.Id
-            }
-            $results.Add($errorObj)
-        }
-    } -ThrottleLimit $ThrottleLimit
+    $maxRetries = 3
+    $retryCount = 0
+    $allResults = @()
     
-    return $syncedResults
+    while ($retryCount -lt $maxRetries) {
+        Write-Verbose "Attempt $($retryCount + 1) of $maxRetries to get VM inventory"
+        
+        $syncedResults = [System.Collections.Concurrent.ConcurrentBag[object]]::new()
+        $processedSubs = [System.Collections.Concurrent.ConcurrentDictionary[string, bool]]::new()
+        
+        $Subscriptions | ForEach-Object -Parallel {
+            $subscription = $_
+            $results = $using:syncedResults
+            $processedSubs = $using:processedSubs
+
+            Import-Module Az.Accounts, Az.Compute -Force
+            
+            # Check if we've already processed this subscription (duplicate detection)
+            if (-not $processedSubs.TryAdd($subscription.Id, $true)) {
+                # Add diagnostic instead of Write-Warning
+                $diagnosticObj = [PSCustomObject]@{
+                    DiagnosticType   = 'Warning'
+                    Message          = "Duplicate processing detected for subscription '$($subscription.Name)' (ID: $($subscription.Id))"
+                    SubscriptionName = $subscription.Name
+                    SubscriptionId   = $subscription.Id
+                }
+                $results.Add($diagnosticObj)
+                return
+            }
+            
+            try {
+                # Instead of clearing context, we'll use a more targeted approach
+                # First, check if we're already in the correct context
+                $currentContext = Get-AzContext
+                $contextNeedsUpdate = $true
+                
+                if ($currentContext -and $currentContext.Subscription.Id -eq $subscription.Id) {
+                    # We're already in the right context
+                    $contextNeedsUpdate = $false
+                }
+                
+                # Set context with explicit verification and retry
+                $contextVerified = $false
+                $maxContextAttempts = 3
+                
+                for ($attempt = 0; $attempt -lt $maxContextAttempts; $attempt++) {
+                    if ($contextNeedsUpdate) {
+                        try {
+                            # Use -Force to ensure we switch even if already in a different subscription
+                            $null = Set-AzContext -SubscriptionObject $subscription -ErrorAction Stop
+                        }
+                        catch {
+                            # If Set-AzContext fails, wait and retry
+                            if ($attempt -lt ($maxContextAttempts - 1)) {
+                                Start-Sleep -Milliseconds (500 * ($attempt + 1))
+                                continue
+                            }
+                            throw
+                        }
+                    }
+                    
+                    # Verify the context is correct
+                    $context = Get-AzContext
+                    if ($context -and $context.Subscription.Id -eq $subscription.Id) {
+                        $contextVerified = $true
+                        break
+                    }
+                    
+                    # Context verification failed, force update on next iteration
+                    $contextNeedsUpdate = $true
+                    
+                    if ($attempt -lt ($maxContextAttempts - 1)) {
+                        Start-Sleep -Milliseconds (500 * ($attempt + 1))
+                    }
+                }
+                
+                if (-not $contextVerified) {
+                    $errorObj = [PSCustomObject]@{
+                        Error            = $true
+                        Message          = "Failed to verify context for subscription '$($subscription.Name)' after retries"
+                        SubscriptionName = $subscription.Name
+                        SubscriptionId   = $subscription.Id
+                        ErrorType        = 'ContextVerification'
+                    }
+                    $results.Add($errorObj)
+                    return
+                }
+                
+                # Get VMs with explicit error handling
+                $vms = @(Get-AzVM -Status -ErrorAction Stop | Where-Object { $_.StorageProfile.OSDisk.OSType -eq 'Windows' })
+                
+                # Track VM names to detect duplicates within subscription
+                $vmNames = @{}
+                $duplicateVMs = @()
+                foreach ($vm in $vms) {
+                    if ($vmNames.ContainsKey($vm.Name)) {
+                        $duplicateVMs += $vm.Name
+                        continue
+                    }
+                    $vmNames[$vm.Name] = $true
+                    
+                    $null = $vm | Add-Member -NotePropertyName 'SubscriptionName' -NotePropertyValue $subscription.Name -Force
+                    $null = $vm | Add-Member -NotePropertyName 'SubscriptionId' -NotePropertyValue $subscription.Id -Force
+                    $results.Add($vm)
+                }
+                
+                # Add diagnostic for duplicates if any
+                if ($duplicateVMs.Count -gt 0) {
+                    $diagnosticObj = [PSCustomObject]@{
+                        DiagnosticType   = 'Warning'
+                        Message          = "Duplicate VMs detected in subscription '$($subscription.Name)': $($duplicateVMs -join ', ')"
+                        SubscriptionName = $subscription.Name
+                        SubscriptionId   = $subscription.Id
+                    }
+                    $results.Add($diagnosticObj)
+                }
+                
+                # Add success marker for this subscription
+                $successObj = [PSCustomObject]@{
+                    SubscriptionId   = $subscription.Id
+                    SubscriptionName = $subscription.Name
+                    VMCount          = $vms.Count
+                    Success          = $true
+                }
+                $results.Add($successObj)
+            }
+            catch {
+                $errorObj = [PSCustomObject]@{
+                    Error            = $true
+                    Message          = $_.Exception.Message
+                    SubscriptionName = $subscription.Name
+                    SubscriptionId   = $subscription.Id
+                    ErrorType        = 'Exception'
+                }
+                $results.Add($errorObj)
+            }
+        } -ThrottleLimit $ThrottleLimit
+        
+        # Process diagnostic messages
+        $resultsArray = @($syncedResults)
+        $diagnostics = @($resultsArray | Where-Object { $_.PSObject.Properties['DiagnosticType'] })
+        foreach ($diag in $diagnostics) {
+            if ($diag.DiagnosticType -eq 'Warning') {
+                Write-Warning $diag.Message
+            }
+            else {
+                Write-Verbose $diag.Message
+            }
+        }
+        
+        # Validate results
+        $errors = @($resultsArray | Where-Object { $_.PSObject.Properties['Error'] -and $_.Error })
+        $successMarkers = @($resultsArray | Where-Object { $_.PSObject.Properties['Success'] -and $_.Success })
+        $vms = @($resultsArray | Where-Object { 
+                -not ($_.PSObject.Properties['Error'] -and $_.Error) -and 
+                -not ($_.PSObject.Properties['Success'] -and $_.Success) -and
+                -not ($_.PSObject.Properties['DiagnosticType'])
+            })
+        
+        # Check for duplicates by creating a unique key for each VM
+        $vmKeys = @{
+        }
+        $duplicatesFound = $false
+        foreach ($vm in $vms) {
+            $key = "$($vm.SubscriptionId)-$($vm.ResourceGroupName)-$($vm.Name)"
+            if ($vmKeys.ContainsKey($key)) {
+                Write-Warning "Duplicate VM found: $($vm.Name) in subscription $($vm.SubscriptionName)"
+                $duplicatesFound = $true
+            }
+            else {
+                $vmKeys[$key] = $vm
+            }
+        }
+        
+        # Determine if we need to retry
+        $contextErrors = @($errors | Where-Object { $_.ErrorType -eq 'ContextVerification' })
+        $shouldRetry = ($contextErrors.Count -gt 0) -or $duplicatesFound -or ($successMarkers.Count -ne $Subscriptions.Count)
+        
+        if (-not $shouldRetry) {
+            # Success - return unique VMs only
+            $allResults = if ($duplicatesFound) { $vmKeys.Values } else { $vms }
+            break
+        }
+        
+        $retryCount++
+        if ($retryCount -lt $maxRetries) {
+            $retryDelay = [math]::Min(1000 * $retryCount, 5000)
+            Write-Warning "Retrying VM inventory collection (attempt $($retryCount + 1)/$maxRetries) after $($retryDelay)ms delay..."
+            Write-Warning "Errors: $($errors.Count), Success markers: $($successMarkers.Count)/$($Subscriptions.Count), Duplicates: $duplicatesFound"
+            Start-Sleep -Milliseconds $retryDelay
+        }
+        else {
+            # Final attempt failed - return what we have with errors
+            Write-Warning "Failed to get complete VM inventory after $maxRetries attempts"
+            $allResults = $resultsArray
+        }
+    }
+    
+    # Final processing - ensure we return errors and unique VMs
+    $finalResults = [System.Collections.ArrayList]::new()
+    
+    # Add any persistent errors
+    $finalErrors = @($allResults | Where-Object { $_.PSObject.Properties['Error'] -and $_.Error })
+    foreach ($error in $finalErrors) {
+        $null = $finalResults.Add($error)
+    }
+    
+    # Add unique VMs (exclude diagnostic objects)
+    $finalVMs = @($allResults | Where-Object { 
+            -not ($_.PSObject.Properties['Error'] -and $_.Error) -and 
+            -not ($_.PSObject.Properties['Success'] -and $_.Success) -and
+            -not ($_.PSObject.Properties['DiagnosticType'])
+        })
+    foreach ($vm in $finalVMs) {
+        $null = $finalResults.Add($vm)
+    }
+    
+    return $finalResults
 }
 
 function Set-HybridBenefitOnVMs {
@@ -239,7 +430,13 @@ function Set-HybridBenefitOnVMs {
                     }
                 }
                 catch {
-                    $statusMessages += 'No SQL Server VM extension found'
+                    # Check if VM is powered off
+                    if ($VM.PowerState -eq 'VM deallocated' -or $VM.PowerState -eq 'VM stopped') {
+                        $statusMessages += 'VM is powered off - cannot determine SQL Server extension status'
+                    }
+                    else {
+                        $statusMessages += 'No SQL Server VM extension found'
+                    }
                 }
             }
             $applied = if ($appliedChanges.Count -eq 0) { 'None' } else { $appliedChanges -join "+" }
@@ -331,10 +528,10 @@ function Invoke-AzHybridBenefitUpdate {
     foreach ($result in $results) {
         $processedCount++
         $color = switch ($result.Status) {
-            'Success'       { 'Green' }
+            'Success' { 'Green' }
             'Partial Error' { 'Yellow' }
-            'Error'         { 'Red' }
-            default         { 'Gray' }
+            'Error' { 'Red' }
+            default { 'Gray' }
         }
         Write-Host "  [$processedCount/$($targetVMs.Count)] $($result.VMName): $($result.Applied) - $($result.Status)" -ForegroundColor $color
     }
@@ -352,10 +549,10 @@ function Invoke-AzHybridBenefitUpdate {
         Write-Host "`n=== Summary ===" -ForegroundColor Cyan
         foreach ($group in $summary) {
             $color = switch ($group.Name) {
-                'Success'       { 'Green' }
+                'Success' { 'Green' }
                 'Partial Error' { 'Yellow' }
-                'Error'         { 'Red' }
-                default         { 'Gray' }
+                'Error' { 'Red' }
+                default { 'Gray' }
             }
             Write-Host "  $($group.Name): $($group.Count)" -ForegroundColor $color
         }
@@ -376,7 +573,7 @@ function Invoke-AzHybridBenefitUpdate {
 }
 
 # Only execute if the script is run directly (not dot-sourced or imported)
-if ($MyInvocation.ScriptName -eq $PSCommandPath) {
+if ($MyInvocation.ScriptName -ne '.') {
     Invoke-AzHybridBenefitUpdate -SubscriptionIds $SubscriptionIds -ThrottleLimit $ThrottleLimit -Mode $Mode
 }
 
