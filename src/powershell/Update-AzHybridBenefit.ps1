@@ -36,7 +36,7 @@
     Updates only SQL Server licenses for VMs with SQL Server installed.
 
 .NOTES
-    Author: bryn.spears@hotmail.com
+    Author: brynsp
     Last Updated: June 27, 2025
     Requires PowerShell 7.5+ and Az PowerShell modules (Az.Accounts, Az.Compute, Az.SqlVirtualMachine)
     
