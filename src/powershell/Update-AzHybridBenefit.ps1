@@ -36,7 +36,7 @@
     Updates only SQL Server licenses for VMs with SQL Server installed.
 
 .NOTES
-    Author: bryn.spears@microsoft.com
+    Author: bryn.spears@hotmail.com
     Last Updated: June 27, 2025
     Requires PowerShell 7.5+ and Az PowerShell modules (Az.Accounts, Az.Compute, Az.SqlVirtualMachine)
     
@@ -79,19 +79,22 @@ $DR_LICENSE_TYPE = 'DR'
 
 #region Functions
 function Get-TargetSubscriptions {
-    param([string[]]$SubscriptionIds)
+    param(
+        [Parameter(Mandatory = $false)]
+        [string[]]$SubscriptionIds
+    )
 
     if ($SubscriptionIds) {
-        [System.Collections.ArrayList]$allRequestedSubs = @()
-        [System.Collections.ArrayList]$enabledSubs = @()
+        $allRequestedSubs = @()
+        $enabledSubs = @()
         
         foreach ($subId in $SubscriptionIds) {
             try {
                 $sub = Get-AzSubscription -SubscriptionId $subId -ErrorAction Stop
-                [void]$allRequestedSubs.Add($sub)
+                $allRequestedSubs += $sub
                 
                 if ($sub.State -eq 'Enabled') {
-                    [void]$enabledSubs.Add($sub)
+                    $enabledSubs += $sub
                 }
                 else {
                     Write-Warning "Subscription '$($sub.Name)' (ID: $subId) is in state '$($sub.State)' and will be skipped"
@@ -109,7 +112,7 @@ function Get-TargetSubscriptions {
             Write-Host "Processing $($enabledSubs.Count) of $($allRequestedSubs.Count) requested subscriptions" -ForegroundColor Yellow
         }
         
-        return @($enabledSubs)
+        return $enabledSubs
     }
     else {
         return @(Get-AzSubscription | Where-Object { $_.State -eq 'Enabled' })
@@ -120,9 +123,11 @@ function Get-WindowsVMInventory {
     param(
         [Parameter(Mandatory)]
         [object[]]$Subscriptions,
+        
         [Parameter(Mandatory = $false)]
         [int]$ThrottleLimit = 10
     )
+    
     $syncedResults = [System.Collections.Concurrent.ConcurrentBag[object]]::new()
     $Subscriptions | ForEach-Object -Parallel {
         
@@ -130,7 +135,7 @@ function Get-WindowsVMInventory {
 
         Import-Module Az.Accounts, Az.Compute -Force
         try {
-            $null = Set-AzContext -SubscriptionObject $_
+            $null = Set-AzContext -SubscriptionObject $_ -ErrorAction Stop
             $vms = Get-AzVM -Status | Where-Object { $_.StorageProfile.OSDisk.OSType -eq 'Windows' }
             foreach ($vm in $vms) {
                 $null = $vm | Add-Member -NotePropertyName 'SubscriptionName' -NotePropertyValue $_.Name -Force
@@ -156,14 +161,17 @@ function Set-HybridBenefitOnVMs {
     param(
         [Parameter(Mandatory)]
         [object[]]$VMs,
+
         [Parameter(Mandatory = $false)]
         [ValidateSet('OS', 'SQL', 'Both')]
         [string]$Mode = 'Both',
+
         [Parameter(Mandatory = $false)]
         [int]$ThrottleLimit = 10
     )
+
     if (-not $VMs -or $VMs.Count -eq 0) {
-        Write-Warning "No VMs provided to Set-HybridBenefitOnVMs."
+        Write-Warning 'No VMs provided to Set-HybridBenefitOnVMs.'
         return @()
     }
     
@@ -179,8 +187,8 @@ function Set-HybridBenefitOnVMs {
         Import-Module Az.Accounts, Az.Compute, Az.SqlVirtualMachine -Force
         $subscriptionId = $VM.SubscriptionId
         $subscriptionName = $VM.SubscriptionName
-        $appliedChanges = [System.Collections.Generic.List[string]]::new()
-        $statusMessages = [System.Collections.Generic.List[string]]::new()
+        $appliedChanges = @()
+        $statusMessages = @()
         $overallStatus = 'Success'
         try {
             $null = Set-AzContext -SubscriptionId $subscriptionId
@@ -192,16 +200,16 @@ function Set-HybridBenefitOnVMs {
                         $fullVm = Get-AzVM -ResourceGroupName $VM.ResourceGroupName -Name $VM.Name
                         $fullVm.LicenseType = $WINDOWS_LICENSE_TYPE
                         $null = Update-AzVM -ResourceGroupName $VM.ResourceGroupName -VM $fullVm
-                        $appliedChanges.Add('OS')
-                        $statusMessages.Add("OS license updated from '$licenseType' to '$WINDOWS_LICENSE_TYPE'")
+                        $appliedChanges += 'OS'
+                        $statusMessages += "OS license updated from '$licenseType' to '$WINDOWS_LICENSE_TYPE'"
                     }
                     catch {
                         $overallStatus = 'Partial Error'
-                        $statusMessages.Add("Failed to update OS license: $($PSItem.Exception.Message)")
+                        $statusMessages += "Failed to update OS license: $($PSItem.Exception.Message)"
                     }
                 }
                 else {
-                    $statusMessages.Add("OS license already set to '$WINDOWS_LICENSE_TYPE'")
+                    $statusMessages += "OS license already set to '$WINDOWS_LICENSE_TYPE'"
                 }
             }
             # SQL License
@@ -218,20 +226,20 @@ function Set-HybridBenefitOnVMs {
                                 LicenseType       = $SQL_LICENSE_TYPE
                             }
                             $null = Update-AzSqlVM @updateAzSqlVMParams
-                            $appliedChanges.Add('SQL')
-                            $statusMessages.Add("SQL license updated from '$sqlLicense' to '$SQL_LICENSE_TYPE'")
+                            $appliedChanges += 'SQL'
+                            $statusMessages += "SQL license updated from '$sqlLicense' to '$SQL_LICENSE_TYPE'"
                         }
                         catch {
                             $overallStatus = 'Partial Error'
-                            $statusMessages.Add("Failed to update SQL license: $($PSItem.Exception.Message)")
+                            $statusMessages += "Failed to update SQL license: $($PSItem.Exception.Message)"
                         }
                     }
                     else {
-                        $statusMessages.Add("SQL license already set to '$sqlLicense'")
+                        $statusMessages += "SQL license already set to '$sqlLicense'"
                     }
                 }
                 catch {
-                    $statusMessages.Add('No SQL Server VM extension found')
+                    $statusMessages += 'No SQL Server VM extension found'
                 }
             }
             $applied = if ($appliedChanges.Count -eq 0) { 'None' } else { $appliedChanges -join "+" }
@@ -323,10 +331,10 @@ function Invoke-AzHybridBenefitUpdate {
     foreach ($result in $results) {
         $processedCount++
         $color = switch ($result.Status) {
-            'Success' { 'Green' }
+            'Success'       { 'Green' }
             'Partial Error' { 'Yellow' }
-            'Error' { 'Red' }
-            default { 'Gray' }
+            'Error'         { 'Red' }
+            default         { 'Gray' }
         }
         Write-Host "  [$processedCount/$($targetVMs.Count)] $($result.VMName): $($result.Applied) - $($result.Status)" -ForegroundColor $color
     }
@@ -344,10 +352,10 @@ function Invoke-AzHybridBenefitUpdate {
         Write-Host "`n=== Summary ===" -ForegroundColor Cyan
         foreach ($group in $summary) {
             $color = switch ($group.Name) {
-                'Success' { 'Green' }
+                'Success'       { 'Green' }
                 'Partial Error' { 'Yellow' }
-                'Error' { 'Red' }
-                default { 'Gray' }
+                'Error'         { 'Red' }
+                default         { 'Gray' }
             }
             Write-Host "  $($group.Name): $($group.Count)" -ForegroundColor $color
         }
